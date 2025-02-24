@@ -1,14 +1,15 @@
-import { Application, getApplications, Grid, getPreferenceValues } from "@raycast/api";
-import FileGridItem from "./components/FileGridItem";
-import { ErrorView } from "./components/ErrorView";
-import { useVisitedFiles } from "./hooks/useVisitedFiles";
-import { resolveAllFiles } from "./components/fetchFigmaData";
+import { type Application, Grid, type LaunchProps, getApplications, getPreferenceValues } from "@raycast/api";
+import { useCachedPromise, withAccessToken } from "@raycast/utils";
 import { useEffect, useState } from "react";
-import { useCachedPromise } from "@raycast/utils";
+import { resolveAllFiles } from "./api";
+import { ErrorView } from "./components/ErrorView";
+import FileGridItem from "./components/FileGridItem";
+import { useVisitedFiles } from "./hooks/useVisitedFiles";
+import { figma } from "./oauth";
+import { loadStarredFiles } from "./starFiles";
 import type { TeamFiles } from "./types";
-import { loadStarredFiles } from "./components/starFiles";
 
-export default function Command() {
+function Command({ launchContext }: Readonly<LaunchProps<{ launchContext: { query: string } }>>) {
   const { data, isLoading, error } = useCachedPromise(
     async () => {
       const results = await resolveAllFiles();
@@ -35,6 +36,7 @@ export default function Command() {
   const [filteredFiles, setFilteredFiles] = useState(data);
   const [isFiltered, setIsFiltered] = useState(false);
   const [desktopApp, setDesktopApp] = useState<Application>();
+  const [searchText, setSearchText] = useState<string>(launchContext?.query ?? "");
 
   useEffect(() => {
     getApplications()
@@ -105,6 +107,9 @@ export default function Command() {
     <Grid
       isLoading={isLoadingBlock}
       searchBarPlaceholder="Filter files by name..."
+      searchText={searchText}
+      onSearchTextChange={setSearchText}
+      filtering={true}
       searchBarAccessory={filterDropdown()}
     >
       {!isFiltered && (
@@ -181,3 +186,5 @@ export default function Command() {
     </Grid>
   );
 }
+
+export default withAccessToken(figma)(Command);

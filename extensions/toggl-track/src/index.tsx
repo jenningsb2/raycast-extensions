@@ -1,72 +1,34 @@
-import { useMemo } from "react";
+import { Action, ActionPanel, Alert, Color, confirmAlert, Icon, List } from "@raycast/api";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
-import RunningTimeEntry from "./components/RunningTimeEntry";
-import { ActionPanel, clearSearchBar, Icon, List, Action, showToast, Toast } from "@raycast/api";
-import { createTimeEntry, TimeEntry } from "./api";
-import ProjectListItem from "./components/ProjectListItem";
-import CreateTimeEntryForm from "./components/CreateTimeEntryForm";
-import { ExtensionContextProvider } from "./context/ExtensionContext";
-import { TimeEntryContextProvider, useTimeEntryContext } from "./context/TimeEntryContext";
+
+import { removeTimeEntry } from "@/api/timeEntries";
+import TimeEntryForm from "@/components/CreateTimeEntryForm";
+import RunningTimeEntry from "@/components/RunningTimeEntry";
+import UpdateTimeEntryForm from "@/components/UpdateTimeEntryForm";
+import { ExtensionContextProvider } from "@/context/ExtensionContext";
+import { formatSeconds } from "@/helpers/formatSeconds";
+import Shortcut from "@/helpers/shortcuts";
+import { Verb, withToast } from "@/helpers/withToast";
+import { useProcessedTimeEntries } from "@/hooks/useProcessedTimeEntries";
+import { useTimeEntryActions } from "@/hooks/useTimeEntryActions";
+import { useTotalDurationToday } from "@/hooks/useTotalDurationToday";
 
 dayjs.extend(duration);
 
 function ListView() {
   const {
     isLoading,
-    timeEntries,
-    runningTimeEntry,
-    projects,
-    projectGroups,
+    mutateTimeEntries,
     revalidateRunningTimeEntry,
     revalidateTimeEntries,
-  } = useTimeEntryContext();
+    runningTimeEntry,
+    timeEntries,
+    timeEntriesWithUniqueProjectAndDescription,
+  } = useProcessedTimeEntries();
 
-  const getProjectById = (id: number) => projects.find((p) => p.id === id);
-
-  const timeEntriesWithUniqueProjectAndDescription = timeEntries.reduce(
-    (acc, timeEntry) =>
-      acc.find((t) => t.description === timeEntry.description && t.project_id === timeEntry.project_id)
-        ? acc
-        : [...acc, timeEntry],
-    [] as TimeEntry[],
-  );
-
-  const totalDurationToday = useMemo(() => {
-    let seconds = timeEntries
-      .slice(runningTimeEntry ? 1 : 0)
-      .filter((timeEntry) => dayjs(timeEntry.start).isSame(dayjs(), "day"))
-      .reduce((acc, timeEntry) => acc + timeEntry.duration, 0);
-    if (runningTimeEntry) seconds += dayjs().diff(dayjs(runningTimeEntry.start), "second");
-    return seconds;
-  }, [timeEntries, runningTimeEntry]);
-
-  function formatSeconds(seconds: number) {
-    const h = Math.floor(seconds / 3600);
-    seconds %= 3600;
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-
-    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }
-
-  async function resumeTimeEntry(timeEntry: TimeEntry) {
-    await showToast(Toast.Style.Animated, "Starting timer...");
-    try {
-      await createTimeEntry({
-        projectId: timeEntry.project_id,
-        workspaceId: timeEntry.workspace_id,
-        description: timeEntry.description,
-        tags: timeEntry.tags,
-        billable: timeEntry.billable,
-      });
-      revalidateRunningTimeEntry();
-      await showToast(Toast.Style.Success, "Time entry resumed");
-      await clearSearchBar({ forceScrollToTop: true });
-    } catch (e) {
-      await showToast(Toast.Style.Failure, "Failed to resume time entry");
-    }
-  }
+  const totalDurationToday = useTotalDurationToday(timeEntries, runningTimeEntry);
+  const { resumeTimeEntry } = useTimeEntryActions(revalidateRunningTimeEntry, revalidateTimeEntries);
 
   return (
     <List
@@ -76,8 +38,9 @@ function ListView() {
     >
       {runningTimeEntry && (
         <RunningTimeEntry
-          project={projects.find(({ id }) => runningTimeEntry.project_id === id)}
-          {...{ runningTimeEntry, revalidateRunningTimeEntry, revalidateTimeEntries }}
+          runningTimeEntry={runningTimeEntry}
+          revalidateRunningTimeEntry={revalidateRunningTimeEntry}
+          revalidateTimeEntries={revalidateTimeEntries}
         />
       )}
       <List.Section title="Actions">
@@ -91,9 +54,10 @@ function ListView() {
                 icon={{ source: Icon.Clock }}
                 target={
                   <ExtensionContextProvider>
-                    <TimeEntryContextProvider>
-                      <CreateTimeEntryForm />
-                    </TimeEntryContextProvider>
+                    <TimeEntryForm
+                      revalidateRunningTimeEntry={revalidateRunningTimeEntry}
+                      revalidateTimeEntries={revalidateTimeEntries}
+                    />
                   </ExtensionContextProvider>
                 }
               />
@@ -102,16 +66,19 @@ function ListView() {
         />
       </List.Section>
       {timeEntriesWithUniqueProjectAndDescription.length > 0 && (
-        <List.Section title="Resume recent time entry">
+        <List.Section title="Recent time entries">
           {timeEntriesWithUniqueProjectAndDescription.map((timeEntry) => (
             <List.Item
               key={timeEntry.id}
-              keywords={[timeEntry.description, getProjectById(timeEntry.project_id)?.name || ""]}
+              keywords={[timeEntry.description, timeEntry.project_name || "", timeEntry.client_name || ""]}
               title={timeEntry.description || "No description"}
-              subtitle={timeEntry.billable ? "$" : ""}
-              accessoryTitle={getProjectById(timeEntry?.project_id)?.name}
-              accessoryIcon={{ source: Icon.Dot, tintColor: getProjectById(timeEntry?.project_id)?.color }}
-              icon={{ source: Icon.Circle, tintColor: getProjectById(timeEntry?.project_id)?.color }}
+              subtitle={(timeEntry.client_name ? timeEntry.client_name + " | " : "") + (timeEntry.project_name ?? "")}
+              accessories={[
+                ...timeEntry.tags.map((tag) => ({ tag })),
+                timeEntry.billable ? { tag: { value: "$" } } : {},
+                { text: formatSeconds(timeEntry.duration) },
+              ]}
+              icon={{ source: Icon.Circle, tintColor: timeEntry.project_color }}
               actions={
                 <ActionPanel>
                   <Action.SubmitForm
@@ -119,25 +86,66 @@ function ListView() {
                     onSubmit={() => resumeTimeEntry(timeEntry)}
                     icon={{ source: Icon.Clock }}
                   />
+                  <Action.Push
+                    title="Edit Time Entry"
+                    icon={Icon.Pencil}
+                    target={
+                      <ExtensionContextProvider>
+                        <UpdateTimeEntryForm timeEntry={timeEntry} revalidateTimeEntries={revalidateTimeEntries} />
+                      </ExtensionContextProvider>
+                    }
+                  />
+                  <Action.Push
+                    title="Create Similar Time Entry"
+                    icon={{ source: Icon.Plus }}
+                    shortcut={Shortcut.Duplicate}
+                    target={
+                      <ExtensionContextProvider>
+                        <TimeEntryForm
+                          initialValues={timeEntry}
+                          revalidateRunningTimeEntry={revalidateRunningTimeEntry}
+                          revalidateTimeEntries={revalidateTimeEntries}
+                        />
+                      </ExtensionContextProvider>
+                    }
+                  />
+                  <ActionPanel.Section>
+                    <Action
+                      title="Delete Time Entry"
+                      icon={Icon.Trash}
+                      style={Action.Style.Destructive}
+                      shortcut={{ modifiers: ["ctrl"], key: "x" }}
+                      onAction={async () => {
+                        await confirmAlert({
+                          title: "Delete Time Entry",
+                          message: "Are you sure you want to delete this time entry?",
+                          icon: {
+                            source: Icon.Trash,
+                            tintColor: Color.Red,
+                          },
+                          primaryAction: {
+                            title: "Delete",
+                            style: Alert.ActionStyle.Destructive,
+                            onAction: () => {
+                              withToast({
+                                noun: "Time Entry",
+                                verb: Verb.Delete,
+                                action: async () => {
+                                  await mutateTimeEntries(removeTimeEntry(timeEntry.workspace_id, timeEntry.id));
+                                },
+                              });
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </ActionPanel.Section>
                 </ActionPanel>
               }
             />
           ))}
         </List.Section>
       )}
-      <List.Section title="Projects">
-        {projectGroups &&
-          projectGroups.map((group) =>
-            group.projects.map((project) => (
-              <ProjectListItem
-                key={project.id}
-                project={project}
-                subtitle={group.client?.name}
-                accessoryTitle={group.workspace.name}
-              />
-            )),
-          )}
-      </List.Section>
     </List>
   );
 }
@@ -145,9 +153,7 @@ function ListView() {
 export default function Command() {
   return (
     <ExtensionContextProvider>
-      <TimeEntryContextProvider>
-        <ListView />
-      </TimeEntryContextProvider>
+      <ListView />
     </ExtensionContextProvider>
   );
 }

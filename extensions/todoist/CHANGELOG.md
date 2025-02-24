@@ -1,8 +1,61 @@
 # Todoist Changelog
 
+## [✨ AI Enhancements] - 2025-02-21
+
+## [Add Next Task as Title in Menu Bar] - 2025-02-20
+
+Added option to display the next upcoming task in the menu bar title when no task is selected. This can be enabled in preferences.
+
+## [Fix Default Sorting] - 2025-02-20
+
+Change the default sorting to align with the task order in Todoist. 
+
+## [Add time format preference from Todoist preferences] - 2025-02-17
+
+- Raycast now pulls your preferred time format preference from the Todoist user account's settings and then uses that when displaying time
+
+## [Add Complete Task Shortcut Preferences] - 2025-01-31
+
+- Adjusting shortcuts for the following task actions:
+  - Complete Task - Now `⌘` + `Enter` (previously `shift` + `⌘` + `E`)
+  - Open Task in Todoist - Now `⌘` + `O` (previously `⌘` + `Enter`)
+
+## [Add Support for Task Deadlines] - 2025-01-31
+
+It's now possible to specify a deadline when using the `Create Task` command. Deadlines are displayed in the task list and task details views.
+
+## [Quick Add Task Improvement] - 2024-12-02
+
+Added a pop to the root and cleared the search bar after creating a task for the `close window immediately` preference.
+
+## [Menu Bar Command Fixes] - 2024-08-05
+
+Changed Menu bar icon color contrast issue with certain wallpapers in light mode.
+
+## [Focus Label] - 2024-07-12
+
+Adds a preference to set a specified label for the task in focus. The label will be removed when the task is not in focus.
+This helps filter in-focus tasks on Todoist UI. The label will only be applied if the preference textfield is not empty.
+
+## [Todoist Quicklinks] - 2024-07-09
+
+- Added a new action to create quicklinks for various views in Todoist (e.g., Today, specific projects, etc.).
+
+## [Fixes] - 2024-07-03
+
+Completing tasks or other action no longer throw errors if menu bar command is not activated.
+
+## [Add time to Schedule Task action] - 2024-01-25
+
+It's now possible to specify a time when scheduling a task from the list item.
+
+## [Change Menu Bar Icon Color in Dark Mode] - 2024-01-22
+
+Changed Menu bar icon color in dark mode to #e5e5e5.
+
 ## [Show filters and filter tasks] - 2023-12-18
 
-You can now view your Todoist filters and see all tasks associated with a selected fitler. 
+You can now view your Todoist filters and see all tasks associated with a selected filter.
 
 ## [Focused task] - 2023-10-30
 

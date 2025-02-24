@@ -1,50 +1,64 @@
-import { List, Icon, ActionPanel, Action, showToast, Toast } from "@raycast/api";
+import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import dayjs from "dayjs";
-import useCurrentTime from "../hooks/useCurrentTime";
-import { stopTimeEntry, TimeEntry, Project } from "../api";
+
+import { TimeEntry, TimeEntryMetaData, updateTimeEntry } from "@/api";
+import { useCurrentTime } from "@/hooks/useCurrentTime";
+import { useTimeEntryActions } from "@/hooks/useTimeEntryActions";
 
 interface RunningTimeEntryProps {
-  runningTimeEntry: TimeEntry;
-  project?: Project;
+  runningTimeEntry: TimeEntry & TimeEntryMetaData;
   revalidateRunningTimeEntry: () => void;
   revalidateTimeEntries: () => void;
 }
 
 function RunningTimeEntry({
   runningTimeEntry,
-  project,
   revalidateRunningTimeEntry,
   revalidateTimeEntries,
 }: RunningTimeEntryProps) {
-  const currentTime = useCurrentTime();
+  const { currentTime, setCurrentTime } = useCurrentTime();
 
-  const stopRunningTimeEntry = async () => {
-    await showToast(Toast.Style.Animated, "Stopping time entry...");
-    try {
-      await stopTimeEntry({ id: runningTimeEntry.id, workspaceId: runningTimeEntry.workspace_id });
-      await showToast(Toast.Style.Success, `Stopped time entry`);
-    } catch (e) {
-      await showToast(Toast.Style.Failure, "Failed to stop time entry");
-      return;
-    }
-    revalidateRunningTimeEntry();
-    revalidateTimeEntries();
-  };
+  const { stopRunningTimeEntry } = useTimeEntryActions(revalidateRunningTimeEntry, revalidateTimeEntries);
 
   return (
     <List.Section title="Running time entry" key="running-time-entry">
       <List.Item
         title={runningTimeEntry.description || "No description"}
+        keywords={[
+          runningTimeEntry.description,
+          runningTimeEntry.project_name || "",
+          runningTimeEntry.client_name || "",
+        ]}
         subtitle={
-          (runningTimeEntry.billable ? "$  " : "") +
+          (runningTimeEntry.client_name ? runningTimeEntry.client_name + " | " : "") +
+          (runningTimeEntry.project_name ? runningTimeEntry.project_name + " | " : "") +
           dayjs.duration(dayjs(currentTime).diff(runningTimeEntry.start), "milliseconds").format("HH:mm:ss")
         }
-        accessoryTitle={project?.name}
-        accessoryIcon={{ source: Icon.Dot, tintColor: project?.color }}
-        icon={{ source: Icon.Clock, tintColor: project?.color }}
+        accessories={[
+          ...runningTimeEntry.tags.map((tag) => ({ tag })),
+          runningTimeEntry.billable ? { tag: { value: "$" } } : {},
+        ]}
+        icon={{ source: Icon.Circle, tintColor: runningTimeEntry.project_color }}
         actions={
           <ActionPanel>
-            <Action.SubmitForm icon={{ source: Icon.Clock }} onSubmit={stopRunningTimeEntry} title="Stop Time Entry" />
+            <Action.SubmitForm
+              icon={{ source: Icon.Clock }}
+              onSubmit={() => stopRunningTimeEntry(runningTimeEntry)}
+              title="Stop Time Entry"
+            />
+            <Action.PickDate
+              icon={{ source: Icon.RotateAntiClockwise }}
+              title="Change Start Time"
+              onChange={async (date) => {
+                if (date) {
+                  await updateTimeEntry(runningTimeEntry.workspace_id, runningTimeEntry.id, {
+                    start: date.toISOString(),
+                  });
+                  revalidateRunningTimeEntry();
+                  setCurrentTime(dayjs());
+                }
+              }}
+            />
           </ActionPanel>
         }
       />

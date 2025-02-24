@@ -1,21 +1,22 @@
-import { Action, ActionPanel, Alert, Color, confirmAlert, Icon, List } from "@raycast/api";
+import { Action, ActionPanel, Alert, Color, confirmAlert, Icon, List, Image } from "@raycast/api";
+import { getFavicon } from "@raycast/utils";
 import { useState } from "react";
-import { capitalize } from "lodash";
 import { ContentType, ReadState } from "./lib/api";
 import { View } from "./lib/oauth/view";
 import { preferences } from "./lib/preferences";
 import { useBookmarks } from "./lib/hooks/use-bookmarks";
 import { useTags } from "./lib/hooks/use-tags";
+import { titleCase } from "./lib/utils";
 
 interface SearchArguments {
   title: string;
 }
 
 function SearchBookmarks(props: { arguments?: SearchArguments }) {
-  const [state, setState] = useState(preferences.defaultFilter);
+  const [state, setState] = useState<ReadState>(ReadState.All);
   const [tag, setTag] = useState<string>();
   const [contentType, setContentType] = useState<ContentType>();
-  const [search, setSearch] = useState(props.arguments?.title);
+  const [search, setSearch] = useState<string>(props.arguments?.title || "");
   const [tagSearch, setTagSearch] = useState<string>();
 
   const { tags } = useTags();
@@ -34,7 +35,7 @@ function SearchBookmarks(props: { arguments?: SearchArguments }) {
     search,
     tag,
     contentType,
-    state: state,
+    state,
   });
 
   return (
@@ -77,7 +78,7 @@ function SearchBookmarks(props: { arguments?: SearchArguments }) {
           </List.Dropdown.Section>
           <List.Dropdown.Section title="Tags">
             {tags.map((tag) => (
-              <List.Dropdown.Item key={tag} icon={Icon.Tag} title={capitalize(tag)} value={tag} />
+              <List.Dropdown.Item key={tag} icon={Icon.Tag} title={titleCase(tag)} value={tag} />
             ))}
           </List.Dropdown.Section>
         </List.Dropdown>
@@ -86,12 +87,19 @@ function SearchBookmarks(props: { arguments?: SearchArguments }) {
       {bookmarks.map((bookmark) => (
         <List.Item
           key={bookmark.id}
-          title={bookmark.title || bookmark.originalUrl}
-          icon={bookmark.type === "article" ? Icon.BlankDocument : bookmark.type === "image" ? Icon.Image : Icon.Video}
+          title={bookmark.title || bookmark.originalUrl || ""}
+          icon={getFavicon(bookmark.originalUrl, { mask: Image.Mask.RoundedRectangle })}
           subtitle={bookmark.author}
           accessories={[
             { icon: bookmark.favorite ? { source: Icon.Star, tintColor: Color.Yellow } : undefined },
             { icon: bookmark.archived ? { source: Icon.Checkmark, tintColor: Color.Green } : undefined },
+            bookmark.tags.length > 0
+              ? {
+                  icon: Icon.Tag,
+                  text: bookmark.tags.length.toString(),
+                  tooltip: bookmark.tags.map(titleCase).join(", "),
+                }
+              : {},
             { text: new Date(bookmark.updatedAt)?.toDateString().replace(/^\w+\s/, "") },
           ]}
           actions={
@@ -136,14 +144,11 @@ function SearchBookmarks(props: { arguments?: SearchArguments }) {
                   icon={{ source: Icon.Trash, tintColor: Color.Red }}
                   onAction={() => {
                     return confirmAlert({
-                      title: "Do you want to delete it?",
-                      message: bookmark.title,
-                      icon: {
-                        source: Icon.Trash,
-                        tintColor: Color.Red,
-                      },
+                      icon: { source: Icon.Trash, tintColor: Color.Red },
+                      title: "Delete Bookmark",
+                      message: bookmark.title || bookmark.originalUrl,
                       primaryAction: {
-                        title: "Delete",
+                        title: "Confirm",
                         style: Alert.ActionStyle.Destructive,
                         onAction: () => deleteBookmark(bookmark.id),
                       },
@@ -181,14 +186,6 @@ function SearchBookmarks(props: { arguments?: SearchArguments }) {
                 />
               </ActionPanel.Section>
               <ActionPanel.Section>
-                <Action
-                  title="Refresh"
-                  icon={Icon.ArrowClockwise}
-                  shortcut={{ modifiers: ["cmd"], key: "r" }}
-                  onAction={() => refreshBookmarks()}
-                />
-              </ActionPanel.Section>
-              <ActionPanel.Section>
                 <ActionPanel.Submenu
                   icon={Icon.Tag}
                   title="Add Tag"
@@ -198,18 +195,26 @@ function SearchBookmarks(props: { arguments?: SearchArguments }) {
                 >
                   {tags
                     .filter((tag) => !bookmark.tags.includes(tag))
-                    .map((tag) => {
-                      return (
-                        <Action
-                          key={tag}
-                          title={capitalize(tag)}
-                          icon={Icon.Tag}
-                          onAction={() => addTag(bookmark.id, tag)}
-                        />
-                      );
-                    })}
+                    .map((tag) => (
+                      <Action
+                        key={tag}
+                        title={titleCase(tag)}
+                        icon={Icon.Tag}
+                        onAction={() => {
+                          addTag(bookmark.id, tag);
+                          setTagSearch(""); // To avoid flickering
+                        }}
+                      />
+                    ))}
                   {tagSearch && (
-                    <Action icon={Icon.Plus} title={tagSearch} onAction={() => addTag(bookmark.id, tagSearch)} />
+                    <Action
+                      icon={Icon.Plus}
+                      title={tagSearch}
+                      onAction={() => {
+                        addTag(bookmark.id, tagSearch);
+                        setTagSearch(""); // To avoid flickering
+                      }}
+                    />
                   )}
                 </ActionPanel.Submenu>
                 <ActionPanel.Submenu
@@ -220,12 +225,20 @@ function SearchBookmarks(props: { arguments?: SearchArguments }) {
                   {bookmark.tags.map((tag) => (
                     <Action
                       key={tag}
-                      title={capitalize(tag)}
+                      title={titleCase(tag)}
                       icon={Icon.Tag}
                       onAction={() => removeTag(bookmark.id, tag)}
                     />
                   ))}
                 </ActionPanel.Submenu>
+              </ActionPanel.Section>
+              <ActionPanel.Section>
+                <Action
+                  title="Refresh"
+                  icon={Icon.ArrowClockwise}
+                  shortcut={{ modifiers: ["cmd"], key: "r" }}
+                  onAction={() => refreshBookmarks()}
+                />
               </ActionPanel.Section>
             </ActionPanel>
           }

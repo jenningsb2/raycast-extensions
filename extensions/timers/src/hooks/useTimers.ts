@@ -5,12 +5,15 @@ import {
   deleteCustomTimer,
   ensureCTFileExists,
   getTimers,
+  pauseTimer,
   readCustomTimers,
   startTimer,
   stopTimer,
-} from "../timerUtils";
-import { CustomTimer, Timer } from "../types";
-import { Alert, Icon, confirmAlert } from "@raycast/api";
+  toggleCustomTimerMenubarVisibility,
+  unpauseTimer,
+} from "../backend/timerBackend";
+import { CTLaunchConfig, CustomTimer, Timer, TimerLaunchConfig } from "../backend/types";
+import { Alert, Icon, Toast, confirmAlert, showToast } from "@raycast/api";
 
 export default function useTimers() {
   const [timers, setTimers] = useState<Timer[] | undefined>(undefined);
@@ -26,9 +29,9 @@ export default function useTimers() {
     setIsLoading(false);
   };
 
-  const handleStartTimer = (seconds: number, name: string, launchedFromMenuBar = false) => {
-    if (!checkForOverlyLoudAlert(launchedFromMenuBar)) return;
-    startTimer(seconds, name);
+  const handleStartTimer = (launchConf: TimerLaunchConfig) => {
+    if (!checkForOverlyLoudAlert(launchConf.launchedFromMenuBar)) return;
+    startTimer(launchConf);
     refreshTimers();
   };
 
@@ -38,9 +41,36 @@ export default function useTimers() {
     refreshTimers();
   };
 
-  const handleStartCT = (customTimer: CustomTimer, launchedFromMenuBar = false) => {
+  const handlePauseTimer = (timer: Timer) => {
+    // cannot migrate old timers as we don't know PID
+    if (timer.pid == undefined && timer.lastPaused === "---")
+      return showToast({
+        style: Toast.Style.Failure,
+        title: "This timer does not support pausing. Try restarting it to enable pausing.",
+      });
+    pauseTimer(timer.originalFile, timer.pid!);
+    refreshTimers();
+  };
+
+  const handleUnpauseTimer = (timer: Timer) => {
+    // cannot migrate old timers as we don't know PID
+    if (timer.pid == undefined && timer.lastPaused === "---")
+      return showToast({
+        style: Toast.Style.Failure,
+        title: "This timer does not support pausing. Try restarting it to enable pausing.",
+      });
+    unpauseTimer(timer);
+    refreshTimers();
+  };
+
+  const handleStartCT = ({ customTimer, launchedFromMenuBar }: CTLaunchConfig) => {
     if (!checkForOverlyLoudAlert(launchedFromMenuBar)) return;
-    startTimer(customTimer.timeInSeconds, customTimer.name, customTimer.selectedSound);
+    startTimer({
+      timeInSeconds: customTimer.timeInSeconds,
+      launchedFromMenuBar: launchedFromMenuBar,
+      timerName: customTimer.name,
+      selectedSound: customTimer.selectedSound,
+    });
     refreshTimers();
   };
 
@@ -50,6 +80,7 @@ export default function useTimers() {
       name: timer.name,
       timeInSeconds: timer.secondsSet,
       selectedSound: "default",
+      showInMenuBar: true,
     };
     createCustomTimer(customTimer);
     refreshTimers();
@@ -69,15 +100,23 @@ export default function useTimers() {
     }
   };
 
+  const handleToggleCTVisibility = async (ctID: string) => {
+    toggleCustomTimerMenubarVisibility(ctID);
+    refreshTimers();
+  };
+
   return {
     timers,
     customTimers,
     isLoading,
     refreshTimers,
     handleStartTimer,
+    handlePauseTimer,
+    handleUnpauseTimer,
     handleStopTimer,
     handleStartCT,
     handleCreateCT,
     handleDeleteCT,
+    handleToggleCTVisibility,
   };
 }
