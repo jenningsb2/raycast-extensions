@@ -67,7 +67,7 @@
       "subtitle": "Audio Device",
       "description": "Monitor audio devices and automatically switch to highest priority when enabled",
       "mode": "no-view",
-      "interval": "15s"
+      "interval": "30s"
     },
     {
       "name": "use-combo1",
