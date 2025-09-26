@@ -1,70 +1,100 @@
-import React, { useEffect } from "react";
-import { environment, LaunchType, getPreferenceValues, updateCommandMetadata, showHUD } from "@raycast/api";
-import { useCachedState } from "@raycast/utils";
-import { setDefaultOutputDevice, setDefaultInputDevice, setDefaultSystemDevice } from "./audio-device";
-import { useCurrentAudioDevices } from "./hooks/useCurrentAudioDevices";
-import { useAudioDevices } from "./hooks/useAudioDevices";
-import { usePriorityLists } from "./hooks/usePriorityLists";
+import {
+  environment,
+  LaunchType,
+  getPreferenceValues,
+  updateCommandMetadata,
+  showHUD,
+  LocalStorage,
+} from "@raycast/api";
+import {
+  getOutputDevices,
+  getInputDevices,
+  getDefaultOutputDevice,
+  getDefaultInputDevice,
+  setDefaultOutputDevice,
+  setDefaultInputDevice,
+  setDefaultSystemDevice,
+} from "./audio-device";
+import { getOutputPriorityList, getInputPriorityList } from "./priority-utils";
 
 interface Preferences {
   enableAutoSwitch: boolean;
   systemOutput: boolean;
 }
 
-function PriorityMonitorCommand() {
+interface CachedState {
+  outputUID?: string;
+  inputUID?: string;
+  outputPriorityList?: string[];
+  inputPriorityList?: string[];
+  lastUpdate?: number;
+}
+
+const CACHE_KEY = "priority-monitor-state";
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export default async function PriorityMonitor() {
   const preferences = getPreferenceValues<Preferences>();
   const isBackground = environment.launchType === LaunchType.Background;
 
-  const [cachedOutputUID, setCachedOutputUID] = useCachedState<string | undefined>("priority-monitor-output-uid");
-  const [cachedInputUID, setCachedInputUID] = useCachedState<string | undefined>("priority-monitor-input-uid");
-  const [shouldExecuteHeavy, setShouldExecuteHeavy] = React.useState<boolean>(false);
-
-  const { currentDevices, currentDevicesIsLoading } = useCurrentAudioDevices();
-
-  const { devices, devicesIsLoading } = useAudioDevices({
-    options: { execute: shouldExecuteHeavy },
-  });
-
-  const { priorityLists, priorityListsIsLoading } = usePriorityLists();
-
-  useEffect(() => {
-    if (!currentDevices) return;
-
+  try {
+    // Early exit if auto-switch is disabled
     if (!preferences.enableAutoSwitch) {
-      setShouldExecuteHeavy(false);
-      updateCommandMetadata({ subtitle: "Auto-switch disabled" });
+      await updateCommandMetadata({ subtitle: "Auto-switch disabled" });
       return;
     }
 
-    const outputChanged = currentDevices.output?.uid !== cachedOutputUID;
-    const inputChanged = currentDevices.input?.uid !== cachedInputUID;
+    // Load cached state
+    const cachedStateStr = await LocalStorage.getItem<string>(CACHE_KEY);
+    const cachedState: CachedState = cachedStateStr ? JSON.parse(cachedStateStr) : {};
 
-    if (outputChanged || inputChanged || !cachedOutputUID) {
-      setShouldExecuteHeavy(true);
-    } else {
-      setShouldExecuteHeavy(false);
-      const outputName = currentDevices.output?.name || "None";
-      const inputName = currentDevices.input?.name || "None";
-      updateCommandMetadata({
-        subtitle: `Active: ${outputName} | ${inputName}`,
+    // STEP 1: Lightweight check - get current devices (fast)
+    const [currentOutput, currentInput] = await Promise.all([
+      getDefaultOutputDevice().catch(() => null),
+      getDefaultInputDevice().catch(() => null),
+    ]);
+
+    if (!currentOutput || !currentInput) {
+      await updateCommandMetadata({ subtitle: "No audio devices found" });
+      return;
+    }
+
+    // STEP 2: Check if anything changed
+    const outputChanged = currentOutput.uid !== cachedState.outputUID;
+    const inputChanged = currentInput.uid !== cachedState.inputUID;
+    const cacheExpired = !cachedState.lastUpdate || Date.now() - cachedState.lastUpdate > CACHE_TTL;
+
+    // STEP 3: If nothing changed and cache is fresh, exit early
+    if (!outputChanged && !inputChanged && !cacheExpired) {
+      await updateCommandMetadata({
+        subtitle: `Active: ${currentOutput.name} | ${currentInput.name}`,
       });
-    }
-  }, [currentDevices, cachedOutputUID, cachedInputUID, preferences.enableAutoSwitch]);
-
-  useEffect(() => {
-    if (!shouldExecuteHeavy || !devices || !priorityLists || !currentDevices) {
       return;
     }
 
-    if (!isBackground || !preferences.enableAutoSwitch) {
+    // STEP 4: Something changed or cache expired - do the expensive work
+    const [outputDevices, inputDevices, outputPriorityList, inputPriorityList] = await Promise.all([
+      getOutputDevices().catch(() => []),
+      getInputDevices().catch(() => []),
+      cachedState.outputPriorityList && !cacheExpired
+        ? Promise.resolve(cachedState.outputPriorityList)
+        : getOutputPriorityList().catch(() => []),
+      cachedState.inputPriorityList && !cacheExpired
+        ? Promise.resolve(cachedState.inputPriorityList)
+        : getInputPriorityList().catch(() => []),
+    ]);
+
+    if (outputDevices.length === 0 || inputDevices.length === 0) {
+      await updateCommandMetadata({ subtitle: "No devices available" });
       return;
     }
 
-    const getHighestPriorityDevice = (deviceList: any[], priorityList: string[]) => {
+    // STEP 5: Find highest priority devices
+    const getHighestPriorityDevice = (devices: any[], priorityList: string[]) => {
       let highestPriorityDevice = null;
       let highestPriorityRank = Infinity;
 
-      for (const device of deviceList) {
+      for (const device of devices) {
         const priorityIndex = priorityList.findIndex((name) => name.toLowerCase() === device.name.toLowerCase());
 
         if (priorityIndex !== -1) {
@@ -79,78 +109,62 @@ function PriorityMonitorCommand() {
       return highestPriorityDevice;
     };
 
-    const performDeviceSwitch = async () => {
-      try {
-        const switchedDevices: string[] = [];
+    const topOutputDevice = getHighestPriorityDevice(outputDevices, outputPriorityList);
+    const topInputDevice = getHighestPriorityDevice(inputDevices, inputPriorityList);
 
-        const topOutputDevice = getHighestPriorityDevice(devices.output, priorityLists.output);
-        const topInputDevice = getHighestPriorityDevice(devices.input, priorityLists.input);
+    // STEP 6: Perform switching if needed and we're in background
+    const switchedDevices: string[] = [];
 
-        if (topOutputDevice && currentDevices.output && currentDevices.output.uid !== topOutputDevice.uid) {
-          try {
-            await setDefaultOutputDevice(topOutputDevice.id);
-            if (preferences.systemOutput) {
-              await setDefaultSystemDevice(topOutputDevice.id);
-            }
-            setCachedOutputUID(topOutputDevice.uid);
-            switchedDevices.push(`Output: ${topOutputDevice.name}`);
-          } catch (error) {
-            console.log("Failed to switch output device:", error);
+    if (isBackground && preferences.enableAutoSwitch) {
+      // Check output device
+      if (topOutputDevice && currentOutput.uid !== topOutputDevice.uid) {
+        try {
+          await setDefaultOutputDevice(topOutputDevice.id);
+          if (preferences.systemOutput) {
+            await setDefaultSystemDevice(topOutputDevice.id);
           }
-        } else if (currentDevices.output) {
-          setCachedOutputUID(currentDevices.output.uid);
+          switchedDevices.push(`Output: ${topOutputDevice.name}`);
+        } catch (error) {
+          console.log("Failed to switch output device:", error);
         }
-
-        if (topInputDevice && currentDevices.input && currentDevices.input.uid !== topInputDevice.uid) {
-          try {
-            await setDefaultInputDevice(topInputDevice.id);
-            setCachedInputUID(topInputDevice.uid);
-            switchedDevices.push(`Input: ${topInputDevice.name}`);
-          } catch (error) {
-            console.log("Failed to switch input device:", error);
-          }
-        } else if (currentDevices.input) {
-          setCachedInputUID(currentDevices.input.uid);
-        }
-
-        if (switchedDevices.length > 0) {
-          showHUD(`Auto-switched to ${switchedDevices.join(", ")}`);
-        }
-
-        const outputStatus = topOutputDevice ? topOutputDevice.name : "None";
-        const inputStatus = topInputDevice ? topInputDevice.name : "None";
-
-        await updateCommandMetadata({
-          subtitle: `Priority: ${outputStatus} | ${inputStatus}`,
-        });
-      } catch (error) {
-        console.log("Priority monitor error:", error);
-        await updateCommandMetadata({ subtitle: "Error checking priorities" });
       }
+
+      // Check input device
+      if (topInputDevice && currentInput.uid !== topInputDevice.uid) {
+        try {
+          await setDefaultInputDevice(topInputDevice.id);
+          switchedDevices.push(`Input: ${topInputDevice.name}`);
+        } catch (error) {
+          console.log("Failed to switch input device:", error);
+        }
+      }
+
+      // Show notification if we switched devices
+      if (switchedDevices.length > 0) {
+        showHUD(`Auto-switched to ${switchedDevices.join(", ")}`);
+      }
+    }
+
+    // STEP 7: Update cache with new state
+    const newState: CachedState = {
+      outputUID: topOutputDevice?.uid || currentOutput.uid,
+      inputUID: topInputDevice?.uid || currentInput.uid,
+      outputPriorityList,
+      inputPriorityList,
+      lastUpdate: Date.now(),
     };
 
-    performDeviceSwitch();
-  }, [
-    shouldExecuteHeavy,
-    devices,
-    priorityLists,
-    currentDevices,
-    isBackground,
-    preferences.enableAutoSwitch,
-    preferences.systemOutput,
-    setCachedOutputUID,
-    setCachedInputUID,
-  ]);
+    await LocalStorage.setItem(CACHE_KEY, JSON.stringify(newState));
 
-  const isLoading = currentDevicesIsLoading || devicesIsLoading || priorityListsIsLoading;
+    // STEP 8: Update command metadata
+    const outputStatus = topOutputDevice ? topOutputDevice.name : currentOutput.name;
+    const inputStatus = topInputDevice ? topInputDevice.name : currentInput.name;
 
-  if (isLoading && !currentDevices) {
-    updateCommandMetadata({ subtitle: "Loading..." });
+    await updateCommandMetadata({
+      subtitle: preferences.enableAutoSwitch ? `Priority: ${outputStatus} | ${inputStatus}` : "Auto-switch disabled",
+    });
+  } catch (error) {
+    console.log("Priority monitor error:", error);
+    await updateCommandMetadata({ subtitle: "Error checking priorities" });
   }
-
-  return null;
-}
-
-export default function Command() {
-  return <PriorityMonitorCommand />;
 }
