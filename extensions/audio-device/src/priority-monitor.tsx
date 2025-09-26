@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import { environment, LaunchType, getPreferenceValues, updateCommandMetadata, showHUD } from "@raycast/api";
 import { useCachedState } from "@raycast/utils";
 import { setDefaultOutputDevice, setDefaultInputDevice, setDefaultSystemDevice } from "./audio-device";
@@ -17,12 +17,12 @@ function PriorityMonitorCommand() {
 
   const [cachedOutputUID, setCachedOutputUID] = useCachedState<string | undefined>("priority-monitor-output-uid");
   const [cachedInputUID, setCachedInputUID] = useCachedState<string | undefined>("priority-monitor-input-uid");
-  const shouldExecuteHeavy = useRef<boolean>(false);
+  const [shouldExecuteHeavy, setShouldExecuteHeavy] = React.useState<boolean>(false);
 
   const { currentDevices, currentDevicesIsLoading } = useCurrentAudioDevices();
 
   const { devices, devicesIsLoading } = useAudioDevices({
-    options: { execute: shouldExecuteHeavy.current },
+    options: { execute: shouldExecuteHeavy },
   });
 
   const { priorityLists, priorityListsIsLoading } = usePriorityLists();
@@ -31,7 +31,7 @@ function PriorityMonitorCommand() {
     if (!currentDevices) return;
 
     if (!preferences.enableAutoSwitch) {
-      shouldExecuteHeavy.current = false;
+      setShouldExecuteHeavy(false);
       updateCommandMetadata({ subtitle: "Auto-switch disabled" });
       return;
     }
@@ -40,9 +40,9 @@ function PriorityMonitorCommand() {
     const inputChanged = currentDevices.input?.uid !== cachedInputUID;
 
     if (outputChanged || inputChanged || !cachedOutputUID) {
-      shouldExecuteHeavy.current = true;
+      setShouldExecuteHeavy(true);
     } else {
-      shouldExecuteHeavy.current = false;
+      setShouldExecuteHeavy(false);
       const outputName = currentDevices.output?.name || "None";
       const inputName = currentDevices.input?.name || "None";
       updateCommandMetadata({
@@ -52,7 +52,7 @@ function PriorityMonitorCommand() {
   }, [currentDevices, cachedOutputUID, cachedInputUID, preferences.enableAutoSwitch]);
 
   useEffect(() => {
-    if (!shouldExecuteHeavy.current || !devices || !priorityLists || !currentDevices) {
+    if (!shouldExecuteHeavy || !devices || !priorityLists || !currentDevices) {
       return;
     }
 
@@ -131,6 +131,7 @@ function PriorityMonitorCommand() {
 
     performDeviceSwitch();
   }, [
+    shouldExecuteHeavy,
     devices,
     priorityLists,
     currentDevices,
