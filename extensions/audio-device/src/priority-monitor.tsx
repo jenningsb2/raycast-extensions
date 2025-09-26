@@ -15,7 +15,12 @@ import {
   setDefaultInputDevice,
   setDefaultSystemDevice,
 } from "./audio-device";
-import { getOutputPriorityList, getInputPriorityList } from "./priority-utils";
+import {
+  getOutputPriorityList,
+  getInputPriorityList,
+  isPriorityListDirty,
+  clearPriorityListDirty,
+} from "./priority-utils";
 
 interface Preferences {
   enableAutoSwitch: boolean;
@@ -48,7 +53,16 @@ export default async function PriorityMonitor() {
     const cachedStateStr = await LocalStorage.getItem<string>(CACHE_KEY);
     const cachedState: CachedState = cachedStateStr ? JSON.parse(cachedStateStr) : {};
 
-    // STEP 1: Lightweight check - get current devices (fast)
+    // STEP 1: Check dirty flags (minimal memory read)
+    const [outputDirty, inputDirty] = await Promise.all([
+      isPriorityListDirty(true),
+      isPriorityListDirty(false),
+    ]);
+
+    const priorityListChanged = outputDirty || inputDirty;
+    const cacheExpired = !cachedState.lastUpdate || Date.now() - cachedState.lastUpdate > CACHE_TTL;
+
+    // STEP 2: Lightweight check - get current devices (fast)
     const [currentOutput, currentInput] = await Promise.all([
       getDefaultOutputDevice().catch(() => null),
       getDefaultInputDevice().catch(() => null),
@@ -59,29 +73,25 @@ export default async function PriorityMonitor() {
       return;
     }
 
-    // STEP 2: Check if anything changed
-    const outputChanged = currentOutput.uid !== cachedState.outputUID;
-    const inputChanged = currentInput.uid !== cachedState.inputUID;
-    const cacheExpired = !cachedState.lastUpdate || Date.now() - cachedState.lastUpdate > CACHE_TTL;
+    // STEP 3: Fast path - if nothing dirty and cache fresh, verify current devices match cached top priority
+    if (!priorityListChanged && !cacheExpired) {
+      const outputMatches = currentOutput.uid === cachedState.outputUID;
+      const inputMatches = currentInput.uid === cachedState.inputUID;
 
-    // STEP 3: If nothing changed and cache is fresh, exit early
-    if (!outputChanged && !inputChanged && !cacheExpired) {
-      await updateCommandMetadata({
-        subtitle: `Active: ${currentOutput.name} | ${currentInput.name}`,
-      });
-      return;
+      if (outputMatches && inputMatches) {
+        await updateCommandMetadata({
+          subtitle: `Active: ${currentOutput.name} | ${currentInput.name}`,
+        });
+        return;
+      }
     }
 
     // STEP 4: Something changed or cache expired - do the expensive work
     const [outputDevices, inputDevices, outputPriorityList, inputPriorityList] = await Promise.all([
       getOutputDevices().catch(() => []),
       getInputDevices().catch(() => []),
-      cachedState.outputPriorityList && !cacheExpired
-        ? Promise.resolve(cachedState.outputPriorityList)
-        : getOutputPriorityList().catch(() => []),
-      cachedState.inputPriorityList && !cacheExpired
-        ? Promise.resolve(cachedState.inputPriorityList)
-        : getInputPriorityList().catch(() => []),
+      getOutputPriorityList().catch(() => []),
+      getInputPriorityList().catch(() => []),
     ]);
 
     if (outputDevices.length === 0 || inputDevices.length === 0) {
@@ -145,7 +155,7 @@ export default async function PriorityMonitor() {
       }
     }
 
-    // STEP 7: Update cache with new state
+    // STEP 7: Update cache with new state and clear dirty flags
     const newState: CachedState = {
       outputUID: topOutputDevice?.uid || currentOutput.uid,
       inputUID: topInputDevice?.uid || currentInput.uid,
@@ -154,7 +164,11 @@ export default async function PriorityMonitor() {
       lastUpdate: Date.now(),
     };
 
-    await LocalStorage.setItem(CACHE_KEY, JSON.stringify(newState));
+    await Promise.all([
+      LocalStorage.setItem(CACHE_KEY, JSON.stringify(newState)),
+      outputDirty ? clearPriorityListDirty(true) : Promise.resolve(),
+      inputDirty ? clearPriorityListDirty(false) : Promise.resolve(),
+    ]);
 
     // STEP 8: Update command metadata
     const outputStatus = topOutputDevice ? topOutputDevice.name : currentOutput.name;

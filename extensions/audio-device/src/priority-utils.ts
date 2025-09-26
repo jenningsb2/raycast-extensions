@@ -4,6 +4,8 @@ const OUTPUT_PRIORITY_KEY = "outputPriorityList";
 const INPUT_PRIORITY_KEY = "inputPriorityList";
 const OUTPUT_DEVICE_INFO_KEY = "outputDeviceInfo";
 const INPUT_DEVICE_INFO_KEY = "inputDeviceInfo";
+const OUTPUT_PRIORITY_DIRTY_KEY = "outputPriorityDirty";
+const INPUT_PRIORITY_DIRTY_KEY = "inputPriorityDirty";
 
 type StoredDeviceInfo = {
   name: string;
@@ -38,10 +40,12 @@ export async function getInputPriorityList(): Promise<string[]> {
 
 export async function setOutputPriorityList(priorityList: string[]): Promise<void> {
   await LocalStorage.setItem(OUTPUT_PRIORITY_KEY, JSON.stringify(priorityList));
+  await setPriorityListDirty(true);
 }
 
 export async function setInputPriorityList(priorityList: string[]): Promise<void> {
   await LocalStorage.setItem(INPUT_PRIORITY_KEY, JSON.stringify(priorityList));
+  await setPriorityListDirty(false);
 }
 
 export async function getDeviceInfo(isOutput: boolean): Promise<StoredDeviceInfo[]> {
@@ -110,4 +114,20 @@ export async function ensureAllDevicesInPriorityList(devices: any[], isOutput: b
   }
 
   return updatedPriorityList;
+}
+
+export async function isPriorityListDirty(isOutput: boolean): Promise<boolean> {
+  const key = isOutput ? OUTPUT_PRIORITY_DIRTY_KEY : INPUT_PRIORITY_DIRTY_KEY;
+  const value = await LocalStorage.getItem<string>(key);
+  return value === "true";
+}
+
+export async function setPriorityListDirty(isOutput: boolean): Promise<void> {
+  const key = isOutput ? OUTPUT_PRIORITY_DIRTY_KEY : INPUT_PRIORITY_DIRTY_KEY;
+  await LocalStorage.setItem(key, "true");
+}
+
+export async function clearPriorityListDirty(isOutput: boolean): Promise<void> {
+  const key = isOutput ? OUTPUT_PRIORITY_DIRTY_KEY : INPUT_PRIORITY_DIRTY_KEY;
+  await LocalStorage.removeItem(key);
 }
