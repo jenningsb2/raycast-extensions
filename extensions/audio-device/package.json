@@ -67,7 +67,46 @@
       "subtitle": "Audio Device",
       "description": "Monitor audio devices and automatically switch to highest priority when enabled",
       "mode": "no-view",
-      "interval": "15s"
+      "interval": "60s",
+      "preferences": [
+        {
+          "name": "monitorInterval",
+          "title": "Background Monitoring Interval",
+          "description": "How often to check for audio device changes in the background. Lower values are more responsive but use more system resources.",
+          "type": "dropdown",
+          "required": false,
+          "default": "60s",
+          "data": [
+            {
+              "title": "15 seconds (Most Responsive)",
+              "value": "15s"
+            },
+            {
+              "title": "30 seconds (Responsive)",
+              "value": "30s"
+            },
+            {
+              "title": "60 seconds (Balanced)",
+              "value": "60s"
+            },
+            {
+              "title": "2 minutes (Conservative)",
+              "value": "120s"
+            },
+            {
+              "title": "5 minutes (Minimal Impact)",
+              "value": "300s"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "priority-refresh",
+      "title": "Refresh Priority Monitor",
+      "subtitle": "Audio Device",
+      "description": "Manually trigger an immediate check and switch to highest priority audio devices",
+      "mode": "no-view"
     },
     {
       "name": "use-combo1",
@@ -202,7 +241,7 @@
       "name": "enableAutoSwitch",
       "required": false,
       "title": "Enable Automatic Priority Switching",
-      "description": "Automatically switch to the highest priority available device when audio devices connect or disconnect",
+      "description": "Automatically switch to the highest priority available device when audio devices connect or disconnect. Use 'Refresh Priority Monitor' command for immediate manual switching.",
       "label": "Enable automatic switching",
       "type": "checkbox",
       "default": false
