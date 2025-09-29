@@ -105,14 +105,76 @@ export default async function PriorityMonitor() {
     
     // STEP 3: Smart change detection - check if current devices match cache
     const deviceChanged = currentOutput.uid !== cachedState.outputUID || currentInput.uid !== cachedState.inputUID;
-    const needsFullCheck = priorityListChanged || deviceChanged;
     
-    console.log(`[PriorityMonitor] STEP 3: Change detection analysis:`);
+    // STEP 3.1: Get available devices for proper priority validation
+    console.log(`[PriorityMonitor] STEP 3.1: Getting available devices for priority validation...`);
+    const validationStart = Date.now();
+    
+    const [availableOutputDevices, availableInputDevices] = await Promise.all([
+      getOutputDevices().catch(() => []),
+      getInputDevices().catch(() => []),
+    ]);
+    
+    const availableDeviceLoadDuration = Date.now() - validationStart;
+    console.log(`[PriorityMonitor] STEP 3.1: Available devices loaded in ${availableDeviceLoadDuration}ms`);
+    console.log(`[PriorityMonitor] STEP 3.1: Found ${availableOutputDevices.length} available output devices, ${availableInputDevices.length} available input devices`);
+    
+    // Extract available device names for filtering
+    const availableOutputNames = availableOutputDevices.map(device => device.name.toLowerCase());
+    const availableInputNames = availableInputDevices.map(device => device.name.toLowerCase());
+    
+    console.log(`[PriorityMonitor] STEP 3.1: Available outputs: [${availableOutputNames.slice(0, 3).join(', ')}${availableOutputNames.length > 3 ? '...' : ''}]`);
+    console.log(`[PriorityMonitor] STEP 3.1: Available inputs: [${availableInputNames.slice(0, 3).join(', ')}${availableInputNames.length > 3 ? '...' : ''}]`);
+    
+    // Filter cached priority lists to only include available devices
+    const cachedOutputPriorityList = cachedState.outputPriorityList || [];
+    const cachedInputPriorityList = cachedState.inputPriorityList || [];
+    
+    const availableOutputPriorities = cachedOutputPriorityList.filter(deviceName => 
+      availableOutputNames.includes(deviceName.toLowerCase()));
+    const availableInputPriorities = cachedInputPriorityList.filter(deviceName => 
+      availableInputNames.includes(deviceName.toLowerCase()));
+    
+    console.log(`[PriorityMonitor] STEP 3.1: Filtered to available priorities - output: ${availableOutputPriorities.length} devices, input: ${availableInputPriorities.length} devices`);
+    if (availableOutputPriorities.length > 0) {
+      console.log(`[PriorityMonitor] STEP 3.1: Available output priorities: [${availableOutputPriorities.slice(0, 3).join(', ')}${availableOutputPriorities.length > 3 ? '...' : ''}]`);
+    }
+    if (availableInputPriorities.length > 0) {
+      console.log(`[PriorityMonitor] STEP 3.1: Available input priorities: [${availableInputPriorities.slice(0, 3).join(', ')}${availableInputPriorities.length > 3 ? '...' : ''}]`);
+    }
+    
+    // Check if current devices match the top available priority devices
+    const isOutputOptimal = availableOutputPriorities.length === 0 || 
+      availableOutputPriorities[0]?.toLowerCase() === currentOutput.name.toLowerCase();
+    const isInputOptimal = availableInputPriorities.length === 0 || 
+      availableInputPriorities[0]?.toLowerCase() === currentInput.name.toLowerCase();
+    
+    const validationDuration = Date.now() - validationStart;
+    console.log(`[PriorityMonitor] STEP 3.1: Priority validation completed in ${validationDuration}ms`);
+    console.log(`[PriorityMonitor] STEP 3.1: Current output '${currentOutput.name}' is optimal among available: ${isOutputOptimal}`);
+    console.log(`[PriorityMonitor] STEP 3.1: Current input '${currentInput.name}' is optimal among available: ${isInputOptimal}`);
+    
+    if (!isOutputOptimal && availableOutputPriorities.length > 0) {
+      console.log(`[PriorityMonitor] STEP 3.1: ⚠️  Better output device available - expected: '${availableOutputPriorities[0]}', actual: '${currentOutput.name}'`);
+    }
+    if (!isInputOptimal && availableInputPriorities.length > 0) {
+      console.log(`[PriorityMonitor] STEP 3.1: ⚠️  Better input device available - expected: '${availableInputPriorities[0]}', actual: '${currentInput.name}'`);
+    }
+    
+    const priorityMismatch = !isOutputOptimal || !isInputOptimal;
+    const needsFullCheck = priorityListChanged || deviceChanged || priorityMismatch;
+    
+    console.log(`[PriorityMonitor] STEP 3: Final change detection analysis:`);
     console.log(`[PriorityMonitor] STEP 3: - Priority lists changed: ${priorityListChanged}`);
     console.log(`[PriorityMonitor] STEP 3: - Device UIDs changed: ${deviceChanged}`);
+    console.log(`[PriorityMonitor] STEP 3: - Priority mismatch detected: ${priorityMismatch}`);
     console.log(`[PriorityMonitor] STEP 3: Current UIDs - output: ${currentOutput.uid}, input: ${currentInput.uid}`);
     console.log(`[PriorityMonitor] STEP 3: Cached UIDs - output: ${cachedState.outputUID || 'none'}, input: ${cachedState.inputUID || 'none'}`);
     console.log(`[PriorityMonitor] STEP 3: Needs full check: ${needsFullCheck}`);
+    
+    if (priorityMismatch) {
+      console.log(`[PriorityMonitor] STEP 3: 🔄 Priority mismatch triggers full device enumeration to find higher priority devices`);
+    }
     
     // STEP 3.1: Fast path - no changes detected, cache is reliable
     if (!needsFullCheck) {
