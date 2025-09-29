@@ -36,7 +36,7 @@ interface CachedState {
 }
 
 const CACHE_KEY = "priority-monitor-state";
-const CACHE_TTL = 2 * 60 * 1000; // 2 minutes (reduced for more responsive change detection)
+// Cache persists until actual changes detected - no time-based expiration
 
 export default async function PriorityMonitor() {
   const startTime = Date.now();
@@ -81,9 +81,8 @@ export default async function PriorityMonitor() {
     console.log(`[PriorityMonitor] STEP 1: Output dirty: ${outputDirty}, Input dirty: ${inputDirty}`);
 
     const priorityListChanged = outputDirty || inputDirty;
-    const cacheExpired = !cachedState.lastUpdate || Date.now() - cachedState.lastUpdate > CACHE_TTL;
+    // No time-based cache expiration - only invalidate on actual changes
     console.log(`[PriorityMonitor] STEP 1: Priority list changed: ${priorityListChanged}`);
-    console.log(`[PriorityMonitor] STEP 1: Cache expired: ${cacheExpired}`);
 
     // STEP 2: Always check current device UIDs (lightweight but responsive)
     console.log(`[PriorityMonitor] STEP 2: Getting current device UIDs for change detection...`);
@@ -106,11 +105,10 @@ export default async function PriorityMonitor() {
     
     // STEP 3: Smart change detection - check if current devices match cache
     const deviceChanged = currentOutput.uid !== cachedState.outputUID || currentInput.uid !== cachedState.inputUID;
-    const needsFullCheck = priorityListChanged || cacheExpired || deviceChanged;
+    const needsFullCheck = priorityListChanged || deviceChanged;
     
     console.log(`[PriorityMonitor] STEP 3: Change detection analysis:`);
     console.log(`[PriorityMonitor] STEP 3: - Priority lists changed: ${priorityListChanged}`);
-    console.log(`[PriorityMonitor] STEP 3: - Cache expired: ${cacheExpired}`);
     console.log(`[PriorityMonitor] STEP 3: - Device UIDs changed: ${deviceChanged}`);
     console.log(`[PriorityMonitor] STEP 3: Current UIDs - output: ${currentOutput.uid}, input: ${currentInput.uid}`);
     console.log(`[PriorityMonitor] STEP 3: Cached UIDs - output: ${cachedState.outputUID || 'none'}, input: ${cachedState.inputUID || 'none'}`);
