@@ -55,6 +55,22 @@ export default function EditTaskForm(props: {
     return <Detail isLoading={isLoading} />;
   }
 
+  // Parse the due date correctly, handling timezone issues
+  const getDefaultDueDate = (): Date | undefined => {
+    if (!props.task.due) return undefined;
+
+    const isDateOnly = props.task.due.match(/T00:00:00\.000Z$/);
+    if (isDateOnly) {
+      // For date-only tasks, parse as local date to avoid timezone shift
+      const dateMatch = props.task.due.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (dateMatch) {
+        const [, year, month, day] = dateMatch;
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      }
+    }
+    return new Date(props.task.due);
+  };
+
   return (
     <Form
       actions={
@@ -65,12 +81,7 @@ export default function EditTaskForm(props: {
     >
       <Form.TextField id="title" title="Title" defaultValue={props.task.title} />
       <Form.TextArea id="notes" title="Details" defaultValue={props.task.notes} />
-      <Form.DatePicker
-        id="due"
-        title="Due Date"
-        type={Form.DatePicker.Type.Date}
-        defaultValue={props.task.due === undefined ? undefined : new Date(props.task.due)}
-      />
+      <Form.DatePicker id="due" title="Due Date" type={Form.DatePicker.Type.Date} defaultValue={getDefaultDueDate()} />
       <Form.Dropdown id="listId" title="Task List" defaultValue={props.listId}>
         {lists.map((list) => {
           return <Form.Dropdown.Item value={list.id} title={list.title} key={list.id} />;
