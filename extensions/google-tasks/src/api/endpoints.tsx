@@ -126,24 +126,28 @@ export async function moveTask(taskId: string, sourceList: string, destinationLi
   }
 }
 
-export async function editTask(
-  tasklist: string,
-  task: Task,
-  originalTasklist?: string
-): Promise<void> {
+export async function editTask(tasklist: string, task: Task, originalTasklist?: string): Promise<void> {
   // If the list has changed, use the move endpoint
   if (originalTasklist && originalTasklist !== tasklist) {
     await moveTask(task.id, originalTasklist, tasklist);
   }
 
   // Update the task properties (works whether moved or not)
+  const body: { title: string; notes?: string; due?: string | null } = {
+    title: task.title,
+    notes: task.notes,
+  };
+
+  // Explicitly set due to null to clear it, or to the value if present
+  if (task.due === undefined) {
+    body.due = null;
+  } else {
+    body.due = task.due;
+  }
+
   const response = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${tasklist}/tasks/${task.id}`, {
     method: "PATCH",
-    body: JSON.stringify({
-      title: task.title,
-      notes: task.notes,
-      due: task.due,
-    }),
+    body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${(await client.getTokens())?.accessToken}`,

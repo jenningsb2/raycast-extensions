@@ -9,22 +9,6 @@ export function isCompleted(task: Task): boolean {
   }
 }
 
-export function getChildren(parent: Task, tasks: Task[]): Task[] {
-  const children: Task[] = tasks.filter(function (task) {
-    return task.parent == parent.id;
-  });
-  return children;
-}
-
-export function getIdNames(tasks: Task[]): { [key: string]: string } {
-  const id_names: { [key: string]: string } = {};
-  for (let index = 0; index < tasks.length; index++) {
-    const element = tasks[index];
-    id_names[element.id] = element.title;
-  }
-  return id_names;
-}
-
 export function getIcon(task: Task): { source: Icon; tintColor?: Color } {
   const due_date = task.due === undefined ? new Date() : new Date(task.due);
   const today = new Date();

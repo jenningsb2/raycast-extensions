@@ -1,8 +1,17 @@
-import { Detail, Toast, showToast, Form, ActionPanel, Action, getPreferenceValues, popToRoot, LocalStorage } from "@raycast/api";
+import {
+  Detail,
+  Toast,
+  showToast,
+  Form,
+  ActionPanel,
+  Action,
+  getPreferenceValues,
+  popToRoot,
+  LocalStorage,
+} from "@raycast/api";
 import { useState, useEffect } from "react";
 import * as google from "./api/oauth";
 import { fetchLists, createTask } from "./api/endpoints";
-import { TaskForm } from "./types";
 import { useForm, FormValidation } from "@raycast/utils";
 
 interface CreateTaskFormValues {
@@ -40,8 +49,7 @@ function getDefaultDueDate(preference: string | undefined): Date | null {
 export default function Command() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [lists, setLists] = useState<{ id: string; title: string }[]>([]);
-  const [defaultListId, setDefaultListId] = useState<string>("");
-  const commandPreferences = getPreferenceValues<CommandPreferences>({ commandName: "create-task" });
+  const commandPreferences = getPreferenceValues<CommandPreferences>();
 
   const defaultDueDate = getDefaultDueDate(commandPreferences.defaultDueDate);
 
@@ -88,7 +96,6 @@ export default function Command() {
         const lastUsedListId = await LocalStorage.getItem<string>("lastUsedListId");
         const initialListId = lastUsedListId || fetchedLists[0]?.id || "";
 
-        setDefaultListId(initialListId);
         setValue("listId", initialListId);
         setIsLoading(false);
       } catch (error) {

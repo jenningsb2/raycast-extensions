@@ -1,10 +1,10 @@
 import { List, Toast, showToast } from "@raycast/api";
 import { useState, useEffect, useCallback } from "react";
 import * as google from "../api/oauth";
-import { createTask, deleteTask, editTask, fetchList, toggleTask } from "../api/endpoints";
+import { createTask, deleteTask, editTask, fetchList, fetchLists, toggleTask } from "../api/endpoints";
 import { Filter, Task, TaskForm } from "../types";
 import TaskItem from "./TaskItem";
-import EmptyView from "./EmtpyView";
+import EmptyView from "./EmptyView";
 import { isCompleted } from "../utils";
 
 type State = {
@@ -12,6 +12,7 @@ type State = {
   isLoading: boolean;
   searchText: string;
   tasks: Task[];
+  lists: { id: string; title: string }[];
 };
 
 export default function ListView(props: { listId: string }) {
@@ -20,8 +21,27 @@ export default function ListView(props: { listId: string }) {
     isLoading: true,
     searchText: "",
     tasks: [],
+    lists: [],
   });
 
+  // Fetch lists on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        await google.authorize();
+        const fetchedLists = await fetchLists();
+        setState((previous) => ({
+          ...previous,
+          lists: fetchedLists,
+        }));
+      } catch (error) {
+        console.error(error);
+        showToast({ style: Toast.Style.Failure, title: String(error) });
+      }
+    })();
+  }, []);
+
+  // Fetch tasks when list or filter changes
   useEffect(() => {
     (async () => {
       try {
@@ -40,7 +60,7 @@ export default function ListView(props: { listId: string }) {
         showToast({ style: Toast.Style.Failure, title: String(error) });
       }
     })();
-  }, [google, state.filter]);
+  }, [props.listId, state.filter]);
 
   const handleCreate = useCallback(
     (listId: string, taskToCreate: TaskForm) => {
@@ -186,22 +206,24 @@ export default function ListView(props: { listId: string }) {
           <TaskItem
             key={task.id}
             listId={props.listId}
+            lists={state.lists}
             tasks={state.tasks}
             task={task}
             onToggle={() => handleToggle(task)}
             onDelete={() => handleDelete(task)}
             onCreate={handleCreate}
             onEdit={handleEdit}
+            showCompleted={state.filter === Filter.All || state.filter === Filter.Completed}
+            onToggleShowCompleted={() => {
+              setState((previous) => ({
+                ...previous,
+                filter: previous.filter === Filter.Open ? Filter.All : Filter.Open,
+              }));
+            }}
           />
         );
       })}
-      <EmptyView
-        listId={props.listId}
-        tasks={filterTasks()}
-        filter={state.filter}
-        searchText={state.searchText}
-        onCreate={handleCreate}
-      />
+      <EmptyView listId={props.listId} tasks={filterTasks()} searchText={state.searchText} onCreate={handleCreate} />
     </List>
   );
 }

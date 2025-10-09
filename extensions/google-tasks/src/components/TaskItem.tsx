@@ -1,11 +1,12 @@
-import { Action, ActionPanel, Icon, List } from "@raycast/api";
+import { Action, ActionPanel, Icon, List, Toast, showToast } from "@raycast/api";
 import { Task, TaskForm } from "../types";
-import { getChildren, getIcon, isCompleted } from "../utils";
+import { getIcon, isCompleted } from "../utils";
 import CreateTaskForm from "./CreateTaskForm";
 import EditTaskForm from "./EditTaskForm";
 
 export default function TaskItem(props: {
   listId: string;
+  lists: { id: string; title: string }[];
   tasks: Task[];
   task: Task;
   onToggle: () => void;
@@ -133,9 +134,21 @@ export default function TaskItem(props: {
       actions={
         <ActionPanel>
           <Action
-            title={taskIsCompleted ? "Mark as Incomplete" : "Complete Task"}
+            title={taskIsCompleted ? "Mark as Incomplete" : "Mark as Complete"}
             icon={taskIsCompleted ? Icon.Circle : Icon.CheckCircle}
             onAction={props.onToggle}
+          />
+          <Action.Push
+            title="Edit Task"
+            icon={Icon.Pencil}
+            shortcut={{ modifiers: ["cmd"], key: "e" }}
+            target={<EditTaskForm listId={props.listId} task={props.task} onEdit={props.onEdit} />}
+          />
+          <Action.Push
+            title="Create Task"
+            icon={Icon.NewDocument}
+            shortcut={{ modifiers: ["cmd"], key: "n" }}
+            target={<CreateTaskForm listId={props.listId} onCreate={props.onCreate} />}
           />
           <Action
             title="Delete Task"
@@ -144,18 +157,66 @@ export default function TaskItem(props: {
             shortcut={{ modifiers: ["cmd"], key: "backspace" }}
             onAction={props.onDelete}
           />
-          <Action.Push
-            title="Create Task"
-            icon={Icon.NewDocument}
-            shortcut={{ modifiers: ["cmd"], key: "n" }}
-            target={<CreateTaskForm listId={props.listId} onCreate={props.onCreate} />}
+          <Action.PickDate
+            title="Schedule"
+            icon={Icon.Calendar}
+            shortcut={{ modifiers: ["cmd"], key: "s" }}
+            type={Action.PickDate.Type.Date}
+            onChange={(date) => {
+              if (date) {
+                const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                const dateString = selectedDate.toISOString().split("T")[0] + "T00:00:00.000Z";
+                const updatedTask = { ...props.task, due: dateString };
+                props.onEdit(props.listId, updatedTask, props.listId);
+              } else {
+                const updatedTask = { ...props.task, due: undefined };
+                props.onEdit(props.listId, updatedTask, props.listId);
+              }
+            }}
           />
-          <Action.Push
-            title="Edit Task"
-            icon={Icon.Pencil}
-            shortcut={{ modifiers: ["cmd"], key: "e" }}
-            target={<EditTaskForm listId={props.listId} task={props.task} onEdit={props.onEdit} />}
+          <Action
+            title="Set Due to Today"
+            icon={Icon.Calendar}
+            shortcut={{ modifiers: ["cmd"], key: "t" }}
+            onAction={() => {
+              const now = new Date();
+              const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              const todayString = today.toISOString().split("T")[0] + "T00:00:00.000Z";
+              const updatedTask = { ...props.task, due: todayString };
+              props.onEdit(props.listId, updatedTask, props.listId);
+            }}
           />
+          <Action
+            title="Clear Due Date"
+            icon={Icon.XMarkCircle}
+            shortcut={{ modifiers: ["cmd"], key: "r" }}
+            onAction={() => {
+              const updatedTask = { ...props.task, due: undefined };
+              props.onEdit(props.listId, updatedTask, props.listId);
+            }}
+          />
+          <ActionPanel.Submenu
+            title="Move to List"
+            icon={Icon.ArrowRight}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
+          >
+            {props.lists
+              .filter((list) => list.id !== props.listId)
+              .map((list) => (
+                <Action
+                  key={list.id}
+                  title={list.title}
+                  icon={Icon.List}
+                  onAction={async () => {
+                    props.onEdit(list.id, props.task, props.listId);
+                    await showToast({
+                      style: Toast.Style.Success,
+                      title: `Moved "${props.task.title}" to "${list.title}"`,
+                    });
+                  }}
+                />
+              ))}
+          </ActionPanel.Submenu>
           <Action
             title={props.showCompleted ? "Hide Completed Tasks" : "Show Completed Tasks"}
             icon={props.showCompleted ? Icon.EyeDisabled : Icon.Eye}

@@ -5,7 +5,6 @@ import { createTask, deleteTask, editTask, fetchList, fetchLists, toggleTask } f
 import { Task, TaskForm } from "./types";
 import TaskItem from "./components/TaskItem";
 import CreateTaskForm from "./components/CreateTaskForm";
-import EmptyView from "./components/EmtpyView";
 import { isCompleted } from "./utils";
 
 type State = {
@@ -308,6 +307,7 @@ export default function Command() {
       <TaskItem
         key={task.id}
         listId={state.selectedListId}
+        lists={state.lists}
         tasks={state.tasks}
         task={task}
         onToggle={() => handleToggle(task)}
@@ -346,27 +346,42 @@ export default function Command() {
       }}
     >
       {sections.overdue.length > 0 && (
-        <List.Section title="Overdue" subtitle={`${sections.overdue.length} task${sections.overdue.length === 1 ? "" : "s"}`}>
+        <List.Section
+          title="Overdue"
+          subtitle={`${sections.overdue.length} task${sections.overdue.length === 1 ? "" : "s"}`}
+        >
           {renderTasks(sections.overdue)}
         </List.Section>
       )}
       {sections.todayTasks.length > 0 && (
-        <List.Section title="Today" subtitle={`${sections.todayTasks.length} task${sections.todayTasks.length === 1 ? "" : "s"}`}>
+        <List.Section
+          title="Today"
+          subtitle={`${sections.todayTasks.length} task${sections.todayTasks.length === 1 ? "" : "s"}`}
+        >
           {renderTasks(sections.todayTasks)}
         </List.Section>
       )}
       {sections.upcoming.length > 0 && (
-        <List.Section title="Upcoming" subtitle={`${sections.upcoming.length} task${sections.upcoming.length === 1 ? "" : "s"}`}>
+        <List.Section
+          title="Upcoming"
+          subtitle={`${sections.upcoming.length} task${sections.upcoming.length === 1 ? "" : "s"}`}
+        >
           {renderTasks(sections.upcoming)}
         </List.Section>
       )}
       {sections.noDue.length > 0 && (
-        <List.Section title="No Due Date" subtitle={`${sections.noDue.length} task${sections.noDue.length === 1 ? "" : "s"}`}>
+        <List.Section
+          title="No Due Date"
+          subtitle={`${sections.noDue.length} task${sections.noDue.length === 1 ? "" : "s"}`}
+        >
           {renderTasks(sections.noDue)}
         </List.Section>
       )}
       {state.showCompleted && sections.completed.length > 0 && (
-        <List.Section title="Completed" subtitle={`${sections.completed.length} task${sections.completed.length === 1 ? "" : "s"}`}>
+        <List.Section
+          title="Completed"
+          subtitle={`${sections.completed.length} task${sections.completed.length === 1 ? "" : "s"}`}
+        >
           {renderTasks(sections.completed)}
         </List.Section>
       )}
@@ -378,13 +393,7 @@ export default function Command() {
             <Action.Push
               title="Create Task"
               icon={Icon.NewDocument}
-              target={
-                <CreateTaskForm
-                  listId={state.selectedListId}
-                  title={state.searchText}
-                  onCreate={handleCreate}
-                />
-              }
+              target={<CreateTaskForm listId={state.selectedListId} title={state.searchText} onCreate={handleCreate} />}
             />
             <Action
               title={state.showCompleted ? "Hide Completed Tasks" : "Show Completed Tasks"}

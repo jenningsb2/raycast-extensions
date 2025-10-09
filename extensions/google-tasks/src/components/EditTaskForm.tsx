@@ -30,20 +30,25 @@ export default function EditTaskForm(props: {
   }, []);
 
   const handleSubmit = useCallback(
-    (values: { title: string; notes: string; due: string; listId: string }) => {
+    (values: { title: string; notes: string; due: Date | null; listId: string }) => {
+      const dueString = values.due
+        ? new Date(values.due.getFullYear(), values.due.getMonth(), values.due.getDate()).toISOString().split("T")[0] +
+          "T00:00:00.000Z"
+        : undefined;
+
       props.onEdit(
         values.listId,
         {
           ...props.task,
           title: values.title,
           notes: values.notes,
-          due: values.due,
+          due: dueString,
         },
         originalListId
       );
       pop();
     },
-    [props.onEdit, pop, originalListId]
+    [props.onEdit, pop, originalListId, props.task]
   );
 
   if (isLoading) {
