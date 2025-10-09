@@ -44,6 +44,7 @@ export async function fetchList(tasklist: string, showCompleted = false): Promis
   const json = (await response.json()) as {
     items: Task[];
   };
+
   const sortedTasks = json.items
     .map((item) => ({
       id: item.id,
@@ -108,17 +109,48 @@ export async function createTask(tasklist: string, task: TaskForm): Promise<void
     throw new Error(response.statusText);
   }
 }
-export async function editTask(tasklist: string, task: Task): Promise<void> {
+export async function moveTask(taskId: string, sourceList: string, destinationList: string): Promise<void> {
+  const response = await fetch(
+    `https://tasks.googleapis.com/tasks/v1/lists/${sourceList}/tasks/${taskId}/move?destinationTasklist=${destinationList}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${(await client.getTokens())?.accessToken}`,
+      },
+    }
+  );
+  if (!response.ok) {
+    console.error("move task error:", await response.text());
+    throw new Error(response.statusText);
+  }
+}
+
+export async function editTask(
+  tasklist: string,
+  task: Task,
+  originalTasklist?: string
+): Promise<void> {
+  // If the list has changed, use the move endpoint
+  if (originalTasklist && originalTasklist !== tasklist) {
+    await moveTask(task.id, originalTasklist, tasklist);
+  }
+
+  // Update the task properties (works whether moved or not)
   const response = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${tasklist}/tasks/${task.id}`, {
     method: "PATCH",
-    body: JSON.stringify(task),
+    body: JSON.stringify({
+      title: task.title,
+      notes: task.notes,
+      due: task.due,
+    }),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${(await client.getTokens())?.accessToken}`,
     },
   });
   if (!response.ok) {
-    console.error("fetch items error:", await response.text());
+    console.error("edit task error:", await response.text());
     throw new Error(response.statusText);
   }
 }

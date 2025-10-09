@@ -35,7 +35,7 @@ export function getIcon(task: Task): { source: Icon; tintColor?: Color } {
   }
   // Completed
   else if (isCompleted(task)) {
-    return { source: Icon.Checkmark, tintColor: Color.Green };
+    return { source: Icon.CheckCircle, tintColor: Color.Green };
   }
   // Uncomplete
   else {

@@ -18,10 +18,40 @@
   "license": "MIT",
   "commands": [
     {
-      "name": "view-lists",
-      "title": "View Lists",
-      "description": "View task lists",
+      "name": "my-tasks",
+      "title": "My Tasks",
+      "description": "View and manage your tasks",
       "mode": "view"
+    },
+    {
+      "name": "create-task",
+      "title": "Create Task",
+      "description": "Quickly create a new task",
+      "mode": "view",
+      "preferences": [
+        {
+          "name": "defaultDueDate",
+          "type": "dropdown",
+          "required": false,
+          "title": "Default Due Date",
+          "description": "The default due date for new tasks.",
+          "default": "none",
+          "data": [
+            {
+              "title": "No Date",
+              "value": "none"
+            },
+            {
+              "title": "Today",
+              "value": "today"
+            },
+            {
+              "title": "Tomorrow",
+              "value": "tomorrow"
+            }
+          ]
+        }
+      ]
     }
   ],
   "preferences": [

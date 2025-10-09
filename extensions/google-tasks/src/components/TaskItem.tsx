@@ -1,6 +1,6 @@
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import { Task, TaskForm } from "../types";
-import { getChildren, getIcon } from "../utils";
+import { getChildren, getIcon, isCompleted } from "../utils";
 import CreateTaskForm from "./CreateTaskForm";
 import EditTaskForm from "./EditTaskForm";
 
@@ -11,8 +11,113 @@ export default function TaskItem(props: {
   onToggle: () => void;
   onDelete: () => void;
   onCreate: (listId: string, task: TaskForm) => void;
-  onEdit: (listId: string, task: Task) => void;
+  onEdit: (newListId: string, task: Task, originalListId: string) => void;
+  showCompleted: boolean;
+  onToggleShowCompleted: () => void;
 }) {
+  const formatDueDate = (due: string | undefined): string => {
+    if (!due) return "";
+
+    // Google Tasks API returns dates in RFC 3339 format
+    // For date-only tasks: "2025-10-09T00:00:00.000Z" (midnight UTC - represents Oct 9 date)
+    // For datetime tasks: "2025-10-09T18:00:00.000Z" (specific time UTC)
+
+    const isDateOnly = due.match(/T00:00:00\.000Z$/);
+
+    let dueDate: Date;
+    let dueDateLocal: Date;
+
+    if (isDateOnly) {
+      // For date-only tasks, parse as the intended date regardless of timezone
+      // Extract YYYY-MM-DD from the string
+      const dateMatch = due.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (dateMatch) {
+        const [, year, month, day] = dateMatch;
+        dueDateLocal = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        dueDate = dueDateLocal;
+      } else {
+        dueDate = new Date(due);
+        dueDateLocal = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+      }
+    } else {
+      // For datetime tasks, parse normally (will convert from UTC to local)
+      dueDate = new Date(due);
+      // Extract just the date portion in local timezone
+      dueDateLocal = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+    }
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    if (dueDateLocal.getTime() === today.getTime()) {
+      if (!isDateOnly) {
+        return `Today, ${dueDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+      }
+      return "Today";
+    } else if (dueDateLocal.getTime() === tomorrow.getTime()) {
+      if (!isDateOnly) {
+        return `Tomorrow, ${dueDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+      }
+      return "Tomorrow";
+    } else {
+      if (!isDateOnly) {
+        return dueDate.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      }
+      return dueDateLocal.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+    }
+  };
+
+  const formatCompletedDate = (completed: string | undefined): string => {
+    if (!completed) return "";
+
+    const isDateOnly = completed.match(/T00:00:00\.000Z$/);
+    let completedDate: Date;
+    let completedDateLocal: Date;
+
+    if (isDateOnly) {
+      const dateMatch = completed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (dateMatch) {
+        const [, year, month, day] = dateMatch;
+        completedDateLocal = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        completedDate = completedDateLocal;
+      } else {
+        completedDate = new Date(completed);
+        completedDateLocal = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
+      }
+    } else {
+      completedDate = new Date(completed);
+      completedDateLocal = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
+    }
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (completedDateLocal.getTime() === today.getTime()) {
+      return "Today";
+    } else if (completedDateLocal.getTime() === yesterday.getTime()) {
+      return "Yesterday";
+    } else {
+      return completedDateLocal.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+    }
+  };
+
+  const taskIsCompleted = isCompleted(props.task);
+
   return (
     <List.Item
       key={props.task.id}
@@ -21,30 +126,17 @@ export default function TaskItem(props: {
       title={props.task.title}
       accessories={[
         {
-          date: props.task.due === undefined ? null : new Date(props.task.due),
+          text: taskIsCompleted ? formatCompletedDate(props.task.completed) : formatDueDate(props.task.due),
+          icon: taskIsCompleted ? undefined : props.task.due ? Icon.Calendar : undefined,
         },
       ]}
-      detail={
-        <List.Item.Detail
-          markdown={`# ${props.task.title}
-      \n\n${props.task.notes || ""}`}
-          metadata={
-            <List.Item.Detail.Metadata>
-              <List.Item.Detail.Metadata.Label
-                title={props.task.due === undefined ? "" : new Date(props.task.due).toLocaleDateString()}
-                icon={Icon.Calendar}
-              />
-              <List.Item.Detail.Metadata.Separator />
-              {getChildren(props.task, props.tasks).map((child) => {
-                return <List.Item.Detail.Metadata.Label title={child.title} icon={getIcon(child)} />;
-              })}
-            </List.Item.Detail.Metadata>
-          }
-        />
-      }
       actions={
         <ActionPanel>
-          <Action title="Complete Task" icon={Icon.CheckCircle} onAction={props.onToggle} />
+          <Action
+            title={taskIsCompleted ? "Mark as Incomplete" : "Complete Task"}
+            icon={taskIsCompleted ? Icon.Circle : Icon.CheckCircle}
+            onAction={props.onToggle}
+          />
           <Action
             title="Delete Task"
             icon={Icon.Trash}
@@ -63,6 +155,12 @@ export default function TaskItem(props: {
             icon={Icon.Pencil}
             shortcut={{ modifiers: ["cmd"], key: "e" }}
             target={<EditTaskForm listId={props.listId} task={props.task} onEdit={props.onEdit} />}
+          />
+          <Action
+            title={props.showCompleted ? "Hide Completed Tasks" : "Show Completed Tasks"}
+            icon={props.showCompleted ? Icon.EyeDisabled : Icon.Eye}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "h" }}
+            onAction={props.onToggleShowCompleted}
           />
         </ActionPanel>
       }
