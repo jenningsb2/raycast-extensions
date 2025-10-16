@@ -14,6 +14,7 @@ type State = {
   lists: { id: string; title: string }[];
   selectedListId: string;
   showCompleted: boolean;
+  taskListMap: Map<string, string>; // Maps task.id to list.id
 };
 
 export default function Command() {
@@ -24,6 +25,7 @@ export default function Command() {
     lists: [],
     selectedListId: "",
     showCompleted: false,
+    taskListMap: new Map(),
   });
   const [hasLoadedPreferences, setHasLoadedPreferences] = useState(false);
 
@@ -77,44 +79,95 @@ export default function Command() {
     (async () => {
       try {
         setState((previous) => ({ ...previous, isLoading: true }));
-        const fetchedList = await fetchList(state.selectedListId, true); // Always fetch completed tasks
-        setState((previous) => ({
-          ...previous,
-          tasks: fetchedList,
-          isLoading: false,
-        }));
+
+        // If "Today" is selected, fetch tasks from all lists
+        if (state.selectedListId === "today") {
+          const allTasks: Task[] = [];
+          const taskListMap = new Map<string, string>();
+          for (const list of state.lists) {
+            const tasks = await fetchList(list.id, true);
+            tasks.forEach((task) => taskListMap.set(task.id, list.id));
+            allTasks.push(...tasks);
+          }
+          setState((previous) => ({
+            ...previous,
+            tasks: allTasks,
+            taskListMap,
+            isLoading: false,
+          }));
+        } else {
+          // Fetch tasks from the selected list
+          const fetchedList = await fetchList(state.selectedListId, true); // Always fetch completed tasks
+          const taskListMap = new Map<string, string>();
+          fetchedList.forEach((task) => taskListMap.set(task.id, state.selectedListId));
+          setState((previous) => ({
+            ...previous,
+            tasks: fetchedList,
+            taskListMap,
+            isLoading: false,
+          }));
+        }
       } catch (error) {
         console.error(error);
         setState((previous) => ({ ...previous, tasks: [], isLoading: false }));
         showToast({ style: Toast.Style.Failure, title: String(error) });
       }
     })();
-  }, [state.selectedListId]);
+  }, [state.selectedListId, state.lists]);
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      setState((previous) => ({ ...previous, isLoading: true }));
+
+      // If "Today" is selected, fetch tasks from all lists
+      if (state.selectedListId === "today") {
+        const allTasks: Task[] = [];
+        const taskListMap = new Map<string, string>();
+        for (const list of state.lists) {
+          const tasks = await fetchList(list.id, true);
+          tasks.forEach((task) => taskListMap.set(task.id, list.id));
+          allTasks.push(...tasks);
+        }
+        setState((previous) => ({
+          ...previous,
+          tasks: allTasks,
+          taskListMap,
+          isLoading: false,
+        }));
+      } else {
+        // Fetch tasks from the selected list
+        const refreshedList = await fetchList(state.selectedListId, true);
+        const taskListMap = new Map<string, string>();
+        refreshedList.forEach((task) => taskListMap.set(task.id, state.selectedListId));
+        setState((previous) => ({
+          ...previous,
+          tasks: refreshedList,
+          taskListMap,
+          isLoading: false,
+        }));
+      }
+    } catch (error) {
+      console.error(error);
+      setState((previous) => ({ ...previous, tasks: [], isLoading: false }));
+      showToast({ style: Toast.Style.Failure, title: String(error) });
+    }
+  }, [state.selectedListId, state.lists]);
 
   const handleCreate = useCallback(
     (listId: string, taskToCreate: TaskForm) => {
       (async () => {
         try {
           setState((previous) => ({ ...previous, isLoading: true }));
-          await createTask(state.selectedListId, taskToCreate);
-          const refreshedList = await fetchList(state.selectedListId, true); // Always fetch completed tasks
-          setState((previous) => ({
-            ...previous,
-            tasks: refreshedList,
-            isLoading: false,
-          }));
+          await createTask(listId, taskToCreate);
+          await refreshTasks();
         } catch (error) {
           console.error(error);
-          setState((previous) => ({
-            ...previous,
-            tasks: [],
-            isLoading: false,
-          }));
+          setState((previous) => ({ ...previous, isLoading: false }));
           showToast({ style: Toast.Style.Failure, title: String(error) });
         }
       })();
     },
-    [state.selectedListId]
+    [refreshTasks]
   );
 
   const handleEdit = useCallback(
@@ -123,14 +176,7 @@ export default function Command() {
         try {
           setState((previous) => ({ ...previous, isLoading: true }));
           await editTask(newListId, taskToEdit, originalListId);
-
-          // Refresh the current list to show updated tasks
-          const refreshedList = await fetchList(state.selectedListId, true); // Always fetch completed tasks
-          setState((previous) => ({
-            ...previous,
-            tasks: refreshedList,
-            isLoading: false,
-          }));
+          await refreshTasks();
 
           showToast({
             style: Toast.Style.Success,
@@ -139,37 +185,27 @@ export default function Command() {
           });
         } catch (error) {
           console.error(error);
-          setState((previous) => ({
-            ...previous,
-            tasks: [],
-            isLoading: false,
-          }));
+          setState((previous) => ({ ...previous, isLoading: false }));
           showToast({ style: Toast.Style.Failure, title: String(error) });
         }
       })();
     },
-    [state.selectedListId]
+    [refreshTasks]
   );
 
   const handleToggle = useCallback(
-    (taskToToggle: Task) => {
+    (taskToToggle: Task, taskListId: string) => {
       (async () => {
-        async function toggle(task: Task): Promise<Task[]> {
+        async function toggle(task: Task, listId: string): Promise<void> {
           setState((previous) => ({ ...previous, isLoading: true }));
-          await toggleTask(state.selectedListId, task);
-          const refreshedList = await fetchList(state.selectedListId, true); // Always fetch completed tasks
-          setState((previous) => ({
-            ...previous,
-            tasks: refreshedList,
-            isLoading: false,
-          }));
-          return refreshedList;
+          await toggleTask(listId, task);
+          await refreshTasks();
         }
 
         try {
           const wasCompleted = isCompleted(taskToToggle);
 
-          const refreshedList = await toggle(taskToToggle);
+          await toggle(taskToToggle, taskListId);
 
           // Show confirmation message with undo action
           await showToast({
@@ -180,54 +216,54 @@ export default function Command() {
               title: "Undo",
               shortcut: { modifiers: ["cmd"], key: "z" },
               onAction: async (toast) => {
-                // Find the updated task from the refreshed list
-                const updatedTask = refreshedList.find((t) => t.id === taskToToggle.id);
-                if (updatedTask) {
-                  await toggle(updatedTask);
-                }
+                await toggle(taskToToggle, taskListId);
                 toast.hide();
               },
             },
           });
         } catch (error) {
           console.error(error);
-          setState((previous) => ({
-            ...previous,
-            tasks: [],
-            isLoading: false,
-          }));
+          setState((previous) => ({ ...previous, isLoading: false }));
           showToast({ style: Toast.Style.Failure, title: String(error) });
         }
       })();
     },
-    [state.selectedListId]
+    [refreshTasks]
   );
 
   const handleDelete = useCallback(
-    (taskToDelete: Task) => {
+    (taskToDelete: Task, taskListId: string) => {
       (async () => {
         try {
           setState((previous) => ({ ...previous, isLoading: true }));
-          await deleteTask(state.selectedListId, taskToDelete.id);
-          const refreshedList = await fetchList(state.selectedListId, true); // Always fetch completed tasks
-          setState((previous) => ({
-            ...previous,
-            tasks: refreshedList,
-            isLoading: false,
-          }));
+          await deleteTask(taskListId, taskToDelete.id);
+          await refreshTasks();
         } catch (error) {
           console.error(error);
-          setState((previous) => ({
-            ...previous,
-            tasks: [],
-            isLoading: false,
-          }));
+          setState((previous) => ({ ...previous, isLoading: false }));
           showToast({ style: Toast.Style.Failure, title: String(error) });
         }
       })();
     },
-    [state.selectedListId]
+    [refreshTasks]
   );
+
+  // Helper to parse task due date correctly
+  const parseTaskDate = (dueString: string): Date => {
+    const isDateOnly = dueString.match(/T00:00:00\.000Z$/);
+
+    if (isDateOnly) {
+      // For date-only tasks, parse as local date
+      const dateMatch = dueString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (dateMatch) {
+        const [, year, month, day] = dateMatch;
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      }
+    }
+
+    // For datetime tasks or fallback, parse normally
+    return new Date(dueString);
+  };
 
   // Organize tasks by due date sections
   const organizeTasks = () => {
@@ -241,27 +277,21 @@ export default function Command() {
     const upcoming: Task[] = [];
     const noDue: Task[] = [];
     const completed: Task[] = [];
-
-    // Helper to parse task due date correctly
-    const parseTaskDate = (dueString: string): Date => {
-      const isDateOnly = dueString.match(/T00:00:00\.000Z$/);
-
-      if (isDateOnly) {
-        // For date-only tasks, parse as local date
-        const dateMatch = dueString.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (dateMatch) {
-          const [, year, month, day] = dateMatch;
-          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-        }
-      }
-
-      // For datetime tasks or fallback, parse normally
-      return new Date(dueString);
-    };
+    const completedToday: Task[] = [];
 
     state.tasks.forEach((task) => {
       if (isCompleted(task)) {
-        completed.push(task);
+        // For "Today" view, filter completed tasks by completion date
+        if (state.selectedListId === "today" && task.completed) {
+          const completedDate = parseTaskDate(task.completed);
+          const completedDateOnly = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
+
+          if (completedDateOnly.getTime() === today.getTime()) {
+            completedToday.push(task);
+          }
+        } else {
+          completed.push(task);
+        }
         return;
       }
 
@@ -293,6 +323,11 @@ export default function Command() {
     todayTasks.sort(sortByDue);
     upcoming.sort(sortByDue);
 
+    // If "Today" view is selected, show overdue, today's tasks, and tasks completed today
+    if (state.selectedListId === "today") {
+      return { overdue, todayTasks, upcoming: [], noDue: [], completed: completedToday };
+    }
+
     return { overdue, todayTasks, upcoming, noDue, completed };
   };
 
@@ -303,21 +338,24 @@ export default function Command() {
   }
 
   const renderTasks = (tasks: Task[]) =>
-    tasks.map((task) => (
-      <TaskItem
-        key={task.id}
-        listId={state.selectedListId}
-        lists={state.lists}
-        tasks={state.tasks}
-        task={task}
-        onToggle={() => handleToggle(task)}
-        onDelete={() => handleDelete(task)}
-        onCreate={handleCreate}
-        onEdit={handleEdit}
-        showCompleted={state.showCompleted}
-        onToggleShowCompleted={() => setState((prev) => ({ ...prev, showCompleted: !prev.showCompleted }))}
-      />
-    ));
+    tasks.map((task) => {
+      const taskListId = state.taskListMap.get(task.id) || state.selectedListId;
+      return (
+        <TaskItem
+          key={task.id}
+          listId={taskListId}
+          lists={state.lists}
+          tasks={state.tasks}
+          task={task}
+          onToggle={() => handleToggle(task, taskListId)}
+          onDelete={() => handleDelete(task, taskListId)}
+          onCreate={handleCreate}
+          onEdit={handleEdit}
+          showCompleted={state.showCompleted}
+          onToggleShowCompleted={() => setState((prev) => ({ ...prev, showCompleted: !prev.showCompleted }))}
+        />
+      );
+    });
 
   return (
     <List
@@ -335,9 +373,12 @@ export default function Command() {
             }))
           }
         >
-          {state.lists.map((list) => (
-            <List.Dropdown.Item key={list.id} title={list.title} value={list.id} />
-          ))}
+          <List.Dropdown.Item key="today" title="Today" value="today" />
+          <List.Dropdown.Section>
+            {state.lists.map((list) => (
+              <List.Dropdown.Item key={list.id} title={list.title} value={list.id} />
+            ))}
+          </List.Dropdown.Section>
         </List.Dropdown>
       }
       enableFiltering

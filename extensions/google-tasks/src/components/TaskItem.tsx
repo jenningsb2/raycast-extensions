@@ -125,6 +125,7 @@ export default function TaskItem(props: {
       icon={getIcon(props.task)}
       id={props.task.id}
       title={props.task.title}
+      subtitle={props.task.notes}
       accessories={[
         {
           text: taskIsCompleted ? formatCompletedDate(props.task.completed) : formatDueDate(props.task.due),
